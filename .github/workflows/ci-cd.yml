@@ -1,0 +1,47 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Make test script executable
+        run: chmod +x ./tests/test.sh
+
+      - name: Start services
+        run: docker compose up -d --build
+
+      - name: Run tests
+        run: ./tests/test.sh
+
+      - name: Show service status
+        if: always()
+        run: docker compose ps
+
+      - name: Show service logs
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop services
+        if: always()
+        run: docker compose down
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build v1 image
+        run: docker build -t blue-green-v1 ./app/v1
+      - name: Build v2 image
+        run: docker build -t blue-green-v2 ./app/v2
+      - name: Build nginx image
+        run: docker build -t blue-green-nginx ./nginx

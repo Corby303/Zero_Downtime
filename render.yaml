@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: zero-downtime-v1
+    runtime: docker
+    dockerfilePath: ./app/v1/Dockerfile
+    dockerContext: ./app/v1
+    plan: free
+
+  - type: web
+    name: zero-downtime-v2
+    runtime: docker
+    dockerfilePath: ./app/v2/Dockerfile
+    dockerContext: ./app/v2
+    plan: free
+
+  - type: web
+    name: zero-downtime-nginx
+    runtime: docker
+    dockerfilePath: ./nginx/Dockerfile
+    dockerContext: ./nginx
+    plan: free
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: DNS_RESOLVER
+        value: "1.1.1.1 8.8.8.8"
+      - key: V1_HOST
+        value: zero-downtime-v1.onrender.com
+      - key: V2_HOST
+        value: zero-downtime-v2.onrender.com
+      - key: PROXY_SCHEME
+        value: https
+      - key: NGINX_ENVSUBST_FILTER
+        value: "PORT|DNS_RESOLVER|V1_HOST|V2_HOST|PROXY_SCHEME"
