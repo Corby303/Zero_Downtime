@@ -32,7 +32,11 @@ Open:
 
 ## Exercise 1 - Canary rollout
 
-Edit `nginx/nginx.conf` and change the weights.
+The `upstream` snippets below illustrate weighted routing in `nginx/nginx.conf`.
+
+For Docker Compose and Render, the Docker image loads `nginx/nginx.conf.template`, which uses `split_clients`. Change the percentages in that template and rebuild or redeploy Nginx. For v2-only routing, replace the split entries with `100% ${V2_HOST};`. Editing `nginx/nginx.conf` alone does not affect these deployments.
+
+The following console blocks show example output; exact counts are not guaranteed for each run.
 
 ### 95/5
 
@@ -111,7 +115,7 @@ upstream app_backend {
 }
 ```
 
-Resultas for 20 requests: Blue 10 + Green/Canary 10
+Results for 20 requests: Blue 10 + Green/Canary 10
 
 ```console
 Hello from v1 (Blue)! Requests: 171
@@ -144,7 +148,7 @@ upstream app_backend {
 }
 ```
 
-Resultas for 20 requests: Blue 10 + Green/Canary 10
+Results for 20 requests: Blue 0 + Green/Canary 20
 
 ```console
 Hello from v2 (Green/Canary)! Requests: 24
@@ -443,53 +447,60 @@ zero_downtime-v2-1      zero_downtime-v2                                        
 docker compose down
 ```
 
-## Despliegue en Producion (Reder)
+## Deployment on Render
 
-El sistema se encuentra desplegado y operativo en la nube utilizando **Render**, implementando una arquitectura de despliegue **Canary Deployment** gestionada por Nginx como Reverse Proxy.
+`render.yaml` defines three Docker web services: `zero-downtime-v1`, `zero-downtime-v2`, and `zero-downtime-nginx`. The Nginx service is configured with `V1_HOST=zero-downtime-v1.onrender.com`, `V2_HOST=zero-downtime-v2.onrender.com`, and `PROXY_SCHEME=https` to forward requests to the two applications over HTTPS.
 
-### Endpoints Publicos
+The active `nginx/nginx.conf.template` configures a 95%/5% split using `split_clients`. These are configured traffic shares; a finite sample need not match them exactly.
 
-| Servicio | Rol | URL Pública |
+### Public endpoints
+
+| Service | Role | Public URL |
 | :--- | :--- | :--- |
-| **Nginx Proxy** | Traffic Splitter / Entrypoint | `https://zero-downtime-nginx.onrender.com` |
-| **App v1** | Version Blue (95% del tráfico) | `https://zero-downtime-v1.onrender.com` |
-| **App v2** | Version Green/Canary (5% del tráfico) | `https://zero-downtime-v2.onrender.com` |
+| `zero-downtime-nginx` | Nginx reverse proxy and application entry point | `https://zero-downtime-nginx.onrender.com` |
+| `zero-downtime-v1` | v1 (Blue); configured for 95% of proxy traffic | `https://zero-downtime-v1.onrender.com` |
+| `zero-downtime-v2` | v2 (Green/Canary); configured for 5% of proxy traffic | `https://zero-downtime-v2.onrender.com` |
 
-### Verificacion de Estado (Health Checks)
+Requests sent directly to either application URL bypass the Nginx traffic split.
 
-Comprobación del estado individual de los microservicios en Render:
+### Health checks
 
-```Bash
+Check each application's `/health` endpoint directly:
+
+```bash
 curl -s https://zero-downtime-v1.onrender.com/health && echo ""
 curl -s https://zero-downtime-v2.onrender.com/health && echo ""
 ```
 
-Resultado:
+Expected responses when the applications are healthy:
 
 ```console
 {"status":"healthy","version":"v1"}
 {"status":"healthy","version":"v2"}
 ```
 
-### Pruebas de Distribucion de Trafico
+### Traffic distribution test
 
-```Bash
+Vary the query string so the requests sample different inputs to `split_clients`:
+
+```bash
 for i in {1..100}; do curl -s "https://zero-downtime-nginx.onrender.com/?req=$i"; echo ""; done | grep -oE "v1|v2" | sort | uniq -c
 ```
-Result:
+
+Example output for 100 requests; actual counts can vary:
 
 ```console
   98 v1
    2 v2
 ```
 
-### Latencia y Respuesta del Servidor
+### Server response and latency
 
-```Bash
+```bash
 curl -o /dev/null -s -w "HTTP Status: %{http_code} | Total Time: %{time_total}s\n" https://zero-downtime-nginx.onrender.com/
 ```
 
-Result:
+Example output; check current status and latency with the command above:
 
 ```console
 HTTP Status: 200 | Total Time: 0.547713s
@@ -498,6 +509,6 @@ HTTP Status: 200 | Total Time: 0.547713s
 ## Notes
 
 - Request counters are intentionally stored in memory for teaching purposes and reset whenever a container restarts.
-- Nginx weighted load balancing is approximate over a sequence of requests.
+- Traffic percentages are targets, not guaranteed counts in a finite sample. The Docker template uses `split_clients`, which hashes the client IP address and request URI; vary the URI to sample the split.
 - This repository is designed as a classroom example, not as a production-ready deployment platform.
-- `render.yaml` use to deploy on a cloud environment
+- Use `render.yaml` as a Render Blueprint to deploy the three services to Render.
